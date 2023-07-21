@@ -1,0 +1,2 @@
+id,crsid,project_dir,date_up,date_down,temp_path,target_dir,remote_dest_dir,chunk_size,exclude_dir,md5sum_up,md5sum_down,download_dir
+1,nw416,<project dir on RCS>,,,/mnt/4TB_SSD/,~Documents/target_dir,test,2G,~Documents/target_dir/temp,,,
