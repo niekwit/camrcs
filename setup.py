@@ -22,15 +22,16 @@ setup(
     install_requires=['pandas','Click','sphinx-click','numpy',
                       ],
     classifiers=[
-        'Development Status :: 5 - Production/Stable',
+        'Development Status :: 4 - Beta',
         'Intended Audience :: Science/Research',
-        'License :: OSI Approved :: MIT', 
+        'License :: OSI Approved :: MIT License', 
         'Operating System :: POSIX :: Linux', 
         'Programming Language :: Python :: 3',
+        'Topic :: System :: Archiving :: Backup',
     ],
     entry_points={ ###check
         'console_scripts': [
-            'camrcs = camrcs:cli',
+            'camrcs = src.camrcs:cli',
         ],
     },
     include_package_data=True,
