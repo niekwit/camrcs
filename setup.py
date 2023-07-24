@@ -6,7 +6,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='camrcs',
-    version='0.5',
+    version='0.6',
     py_modules=['camrcs'], 
     description='A package for management of Cambridge Research Cold Storage backups',
     #long_description=long_description,
@@ -19,7 +19,7 @@ setup(
     author_email='nw416@cam.ac.uk',
     license='MIT',
     packages=find_packages(),
-    install_requires=['pandas','Click','sphinx-click','numpy',
+    install_requires=['pandas','Click','numpy',
                       ],
     classifiers=[
         'Development Status :: 4 - Beta',
@@ -31,7 +31,7 @@ setup(
     ],
     entry_points={ ###check
         'console_scripts': [
-            'camrcs = src.camrcs:cli',
+            'camrcs = camrcs:cli',
         ],
     },
     include_package_data=True,
