@@ -39,6 +39,7 @@ def run(command):
         
         command = subprocess.run(command,
                                  shell=True,
+                                 executable='/bin/bash', #process substitution only works in bash
                                  check=True)
         
         click.echo("Done...")
@@ -118,14 +119,14 @@ def up(new,keep):
         chunk_size = row["chunk_size"]
         exclude = row["exclude_dir"]
         
-                
-        if exclude != np.nan:
+                        
+        if type(exclude) == float or exclude == np.nan:
             
-            exclude = f"--exclude={exclude}"
+            exclude = ""
         
         else:
             
-            exclude = ""
+            exclude = f"--exclude={exclude}"
 
         #check if target directory exists
         if not path.exists(target_dir):
@@ -143,37 +144,34 @@ def up(new,keep):
         if not os.path.exists(f"{archive}.split.done"):
             
             #check if unsplit archive exists
-            if not os.path.exists(archive):
+            #if not os.path.exists(archive):
             
-                #create archive
-                click.echo(f"Creating {archive} ...")
-                target_base = os.path.dirname(target_dir)
-                target_name = os.path.basename(target_dir)
-                tar = f"tar -vcz -C {target_base} {exclude} {target_name} | pigz > {archive}"
-                time.sleep(3)
+            #create archive
+            click.echo(f"Creating split {archive} ...")
+            target_base = os.path.dirname(target_dir)
+            target_name = os.path.basename(target_dir)
+            md5sum_file = os.path.join(temp_path,f"md5sum_{os.path.basename(target_dir)}.txt")
+            #Path(md5sum_file).touch()
+            tar = f'tar -vcz -C {target_base} {exclude} {target_name} | pigz | tee >(md5sum > "{md5sum_file}") | split -b {chunk_size} - {archive}.part-'
+            
+            time.sleep(5)
+            
+            #get md5sum from text file
+            if run(tar):
                 
-                if run(tar):
-
-                    click.echo(f"Calculating md5sum for {archive}...")
-                    csv.at[index,"md5sum_up"] = md5(archive)
-                    click.echo(f"Done...")
-                           
-            else:
-                             
-                click.echo("Archive file found...")
-
-            click.echo(f"Splitting {archive} into {chunk_size} chunks...")
-            split = f'split -b {chunk_size} {archive} "{archive}.part-"'
-            
-            if run(split):
+                Path(os.path.join(f"{archive}.split.done")).touch()
                 
-                Path(f"{archive}.split.done").touch() #to mark that splitting has occured
-            
-            
+                with open(md5sum_file) as f:
+                    md5sum_up = f.readline().split("  ")[0]
+                    
+                #remove md5sum file
+                os.remove(md5sum_file)
+                    
         else:
+            
             click.echo(f"{archive} has been created and split before...")
             
-        #wait for user input (otherwise rsync can timeout if user does not prompty enter password)
+        #wait for user input (otherwise rsync can timeout if user does not promptly enter password)
         input("Press Enter to continue...") 
         
         click.echo("Transferring split archive files to RCS...")
@@ -182,9 +180,10 @@ def up(new,keep):
                
         if run(rsync):
             
+            csv.at[index,"md5sum_up"] = md5sum_up
             csv.at[index,"date_up"] = str(datetime.now().astimezone())
                       
-    #update csv with md5 hash/date
+    #update csv with md5sum hash/date
     update_csv(csv)
                 
     #remove archive and split archive files
@@ -234,6 +233,12 @@ def down(keep,target):
     
     click.secho(f"Retrieving archive {os.path.join(project_dir,remote_dest_dir)} from RCS...", fg="green")
     
+    #perform some checks
+    if type(download_dir) != str:
+        
+        click.secho("ERROR: download_dir is not a valid path (left empty?)...", fg="red")
+        sys.exit()
+        
     #create rsync command
     archive = f"{os.path.basename(target_dir)}.tar.gz.part-*"
     archive = f"{os.path.join(project_dir,remote_dest_dir,archive)}"
