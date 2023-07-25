@@ -1,18 +1,18 @@
 from setuptools import setup, find_packages
-#from pathlib import Path
+from pathlib import Path
 
-#this_directory = Path(__file__).parent
-#long_description = (this_directory / "README.rst").read_text()
+this_directory = Path(__file__).parent
+long_description = (this_directory / "README.md").read_text()
 
 setup(
     name='camrcs',
     version='0.6',
     py_modules=['camrcs'], 
     description='A package for management of Cambridge Research Cold Storage backups',
-    #long_description=long_description,
-    #long_description_content_type='text/x-rst',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
     project_urls={
-        'Documentation': 'https://github.com/niekwit/camrcs',
+        'Documentation': 'https://camrcs.readthedocs.io',
         'Source': 'https://github.com/niekwit/camrcs',
     },
     author='Niek Wit',

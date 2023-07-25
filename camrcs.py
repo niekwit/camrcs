@@ -73,7 +73,7 @@ def cli():
 @click.command(name="up")
 @click.option("-k","--keep", 
               is_flag=True,
-              help="Keep archive (.tar.gz) of target dir (but not split archive files)")
+              help="Keep split archive files of target dir")
 @click.option("-n","--new", 
               is_flag=True,
               help="Create empty data.csv file in current directory")
@@ -208,13 +208,13 @@ def up(new,keep):
 @click.command(name="down")
 @click.option("-k","--keep", 
               is_flag=True,
-              help="Keep archive (.tar.gz) of target dir (but not split archive files)")
+              help="Keep split archive files of target dir")
 @click.option("-t","--target", 
               type=int,
               help="Target archive (id) to retrieve from RCS")
 
 def down(keep,target):
-    '''Function for retrieving data from RCS
+    '''Retrieve data from RCS
     '''
     #open data.csv
     csv = pd.read_csv(os.path.join(cdir,"data.csv"))
