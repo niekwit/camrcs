@@ -2,7 +2,7 @@
 About camrcs
 =============
 
-``camrcs`` is developed by Dr. Niek Wit from the University of Cambridge under MIT license:
+``camrcs`` is developed by Dr. Niek Wit from the University of Cambridge under the MIT license:
 
 Copyright (c) 2023 Niek Wit
 

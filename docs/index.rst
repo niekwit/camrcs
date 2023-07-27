@@ -3,7 +3,7 @@
 Welcome to camrcs's documentation!
 ====================================
 
-**camrcs** is a Python package that can upload or retrieve data to/from Cambridge University's Research Cold Storage (RCS).
+``camrcs`` is a Python package that can upload or retrieve data to/from `Cambridge University's Research Cold Storage (RCS) <https://www.hpc.cam.ac.uk/research-cold-store>`_.
 
 .. toctree::
    :maxdepth: 2

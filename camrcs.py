@@ -10,7 +10,9 @@ import hashlib
 from pathlib import Path
 from datetime import datetime
 import time
+import timeit
 
+VERSION = 0.7
 
 #get current working dir
 cdir = os.getcwd()
@@ -39,7 +41,7 @@ def run(command):
         
         command = subprocess.run(command,
                                  shell=True,
-                                 executable='/bin/bash', #process substitution only works in bash
+                                 executable='/bin/bash', #process substitution does not work in all shells
                                  check=True)
         
         click.echo("Done...")
@@ -57,38 +59,63 @@ def update_csv(csv):
     '''Updates data.csv
     '''
     
-    #overwrite csv with md5 hashe/date
+    #overwrite csv with md5 hash/date
     click.echo("Updating data.csv...")
     csv.to_csv("data.csv")  
 
 
+def total_run_time(start):
+    '''Print total run time
+    '''
+    
+    stop = timeit.default_timer()
+    total_time = stop - start
+    
+    #format time
+    ty_res = time.gmtime(total_time)
+    res = time.strftime("%H:%M:%S",ty_res)
+    
+    click.echo(f"Total run time: {res}")
+
+
 ####command line parser####
 @click.group()
+
 def cli():
     '''Management of data backups to/from Cambridge University Research Cold Storage (RCS)
     '''
 
 
+
 #define subparser for uploading data to RCS        
 @click.command(name="up")
+
 @click.option("-k","--keep", 
               is_flag=True,
               help="Keep split archive files of target dir")
-@click.option("-n","--new", 
+
+@click.option("-c","--csv", 
               is_flag=True,
               help="Create empty data.csv file in current directory")
 
 
-def up(new,keep):
+def up(csv,keep):
     '''Upload data to RCS
     '''
-            
-    if new:
+    
+    #start total run timer
+    start = timeit.default_timer()
+    
+    #create empty data.csv if requested        
+    if csv:
         
-        header = "id,crsid,project_dir,date_up,date_down,temp_path,target_dir,remote_dest_dir,chunk_size,exclude_dir,md5sum_up,md5sum_down,download_dir"
+        click.secho("Creating new data.csv", fg="green")
+        
+        header = "id,crsid,project_dir,date_up,date_down,temp_path,target_dir,remote_dest_dir,chunk_size,exclude_dir,md5sum_up,md5sum_down,download_dir,version"
 
         #write to file
         with open(os.path.join(cdir,"data.csv"), "w") as text_file:
+            
             print(header, file=text_file)
             
         return
@@ -105,6 +132,7 @@ def up(new,keep):
     
     #exit if all directories have been uploaded already to RCS
     if total == 0:
+        
         sys.exit("Nothing to upload to RCS!")
     
     #upload data
@@ -132,6 +160,7 @@ def up(new,keep):
         if not path.exists(target_dir):
             
             click.secho(f"ERROR: target_dir ({target_dir}) does not exist!", fg="red")
+            
             continue #go to next dir if any
         
         #tar file name
@@ -143,16 +172,15 @@ def up(new,keep):
         #check if archive has been split before
         if not os.path.exists(f"{archive}.split.done"):
             
-            #check if unsplit archive exists
-            #if not os.path.exists(archive):
-            
             #create archive
             click.echo(f"Creating split {archive} ...")
+            
             target_base = os.path.dirname(target_dir)
             target_name = os.path.basename(target_dir)
+            
             md5sum_file = os.path.join(temp_path,f"md5sum_{os.path.basename(target_dir)}.txt")
-            #Path(md5sum_file).touch()
-            tar = f'tar -vcz -C {target_base} {exclude} {target_name} | pigz | tee >(md5sum > "{md5sum_file}") | split -b {chunk_size} - {archive}.part-'
+            
+            tar = f'tar -vc -C {target_base} {exclude} {target_name} | pigz | tee >(md5sum > "{md5sum_file}") | split -b {chunk_size} - {archive}.part-'
             
             time.sleep(5)
             
@@ -172,17 +200,20 @@ def up(new,keep):
             click.echo(f"{archive} has been created and split before...")
             
         #wait for user input (otherwise rsync can timeout if user does not promptly enter password)
+        click.echo("Transferring split archive files to RCS...")
+        
         input("Press Enter to continue...") 
         
-        click.echo("Transferring split archive files to RCS...")
-              
         rsync = f"rsync -v -h --progress $(ls {archive}.part-*) {crsid}@rcs.uis.cam.ac.uk:{project_dir}/{remote_dest_dir}" 
                
         if run(rsync):
             
+            #update csv
             csv.at[index,"md5sum_up"] = md5sum_up
             csv.at[index,"date_up"] = str(datetime.now().astimezone())
+            csv.at[index,"version"] = VERSION
                       
+        
     #update csv with md5sum hash/date
     update_csv(csv)
                 
@@ -194,28 +225,35 @@ def up(new,keep):
     
     else:
     
-        click.echo("Removing all split archive files...")
-        remove = f"rm -r {archive}.part-*"
+        click.echo("Keeping all split archive files...")
     
     if run(remove):
+        
         click.echo("Finished!")
 
+    #display total run time
+    total_run_time(start)
+    
 
-    
-    
 
 #define subparser for retrieving data from RCS
 @click.command(name="down")
+
 @click.option("-k","--keep", 
               is_flag=True,
               help="Keep split archive files of target dir")
+
 @click.option("-t","--target", 
               type=int,
               help="Target archive (id) to retrieve from RCS")
 
+
 def down(keep,target):
     '''Retrieve data from RCS
     '''
+    #start run timer
+    start = timeit.default_timer()
+    
     #open data.csv
     csv = pd.read_csv(os.path.join(cdir,"data.csv"))
     csv = csv.set_index("id")
@@ -236,7 +274,7 @@ def down(keep,target):
     #perform some checks
     if type(download_dir) != str:
         
-        click.secho("ERROR: download_dir is not a valid path (left empty?)...", fg="red")
+        click.secho("ERROR: download_dir is not a valid path (no value in data.csv?)...", fg="red")
         sys.exit()
         
     #create rsync command
@@ -258,7 +296,9 @@ def down(keep,target):
     if run(cat):
         
         click.echo(f"Calculating md5sum for retrieved archive...")
+        
         csv.at[target,"md5sum_down"] = md5(archive)
+        
         click.echo("Done...")
     
     
@@ -278,18 +318,20 @@ def down(keep,target):
         
         click.secho(f"Retrieved archive incorrect...\nRun camrcs again!", fg="red")
         
-        return
+        sys.exit()
     
     click.echo("Unpacking retrieved archive...")
-    
+        
     #unzipping/unpacking in seperate commands
     #https://superuser.com/questions/841865/extracting-a-tar-gz-file-returns-this-does-not-look-like-a-tar-archive
     unzip_archive = os.path.basename(archive.replace(".gz",""))
     
     if keep:
         
-        untar = f"pigz -d -k {archive} ; cd {download_dir}; tar -xvf {unzip_archive}; rm {unzip_archive}"
+        untar = f"pigz -dk {archive} ; cd {download_dir}; tar -xvf {unzip_archive}; rm {unzip_archive}"
+    
     else:
+        
         os.makedirs(download_dir, exist_ok=True)
         untar = f"pigz -d {archive} ; cd {download_dir}; tar -xvf {unzip_archive}; rm {unzip_archive}"
         
@@ -300,10 +342,25 @@ def down(keep,target):
         
         click.echo("Finished!")
     
+    #display total run time
+    total_run_time(start)
     
+    
+
+@click.command(name="version")
+
+def version():
+    '''Print version and quit
+    '''
+
+    click.secho(f"camrcs v{VERSION}", fg="green")
+
+
+
 #add subparsers
 cli.add_command(up)
 cli.add_command(down)
+cli.add_command(version)
 
 
 

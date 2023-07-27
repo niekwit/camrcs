@@ -2,7 +2,7 @@
 Installation
 =======================
 
-*camrcs*
+camrcs
 =======================
 
 Via github
@@ -30,7 +30,7 @@ Via PyPi
 This will install the most recent stable version of `camrcs`.
 
 
-*pigz*
+pigz
 =======================
 
 ``camrcs`` uses ``pigz`` for data compression
