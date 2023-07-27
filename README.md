@@ -2,7 +2,7 @@
 
 `camrcs` is a Python package that manages data backups to Cambridge University Research Cold Storage (RCS).
 
-Complete documentation can be found [here](https://camrcs.readthedocs.io).
+Complete documentation can be found [here](https://camrcs.readthedocs.io/en/stable/index.html).
 
 ## QUICKSTART
 
