@@ -11,8 +11,9 @@ from pathlib import Path
 from datetime import datetime
 import time
 import timeit
+import glob
 
-VERSION = 0.7
+VERSION = "0.7.1"
 
 #get current working dir
 cdir = os.getcwd()
@@ -78,6 +79,32 @@ def total_run_time(start):
     click.echo(f"Total run time: {res}")
 
 
+#adapted from https://stackoverflow.com/questions/2104080/how-do-i-check-file-size-in-python#2104083
+def convert_bytes(num):
+    '''this function will convert bytes to MB.... GB... etc
+    '''
+    
+    for x in ['bytes', 'KB', 'MB', 'GB', 'TB']:
+        
+        if num < 1024.0:
+            
+            return f'{num:.1f} {x}'
+        
+        num /= 1024.0
+
+
+def file_size(archive):
+    '''calculates total size of split archive files
+    '''
+    
+    #calculate total size of list of files
+    file_list = glob.glob(f"{archive}.part-*")
+    size =  sum(os.path.getsize(f) for f in file_list if os.path.isfile(f))
+    
+    return convert_bytes(size)
+
+
+
 ####command line parser####
 @click.group()
 
@@ -111,7 +138,7 @@ def up(csv,keep):
         
         click.secho("Creating new data.csv", fg="green")
         
-        header = "id,crsid,project_dir,date_up,date_down,temp_path,target_dir,remote_dest_dir,chunk_size,exclude_dir,md5sum_up,md5sum_down,download_dir,version"
+        header = "id,crsid,project_dir,date_up,date_down,temp_path,target_dir,remote_dest_dir,chunk_size,exclude_dir,md5sum_up,md5sum_down,archive_size,download_dir,version"
 
         #write to file
         with open(os.path.join(cdir,"data.csv"), "w") as text_file:
@@ -191,7 +218,7 @@ def up(csv,keep):
                 
                 with open(md5sum_file) as f:
                     md5sum_up = f.readline().split("  ")[0]
-                    
+                
                 #remove md5sum file
                 os.remove(md5sum_file)
                     
@@ -211,11 +238,19 @@ def up(csv,keep):
             #update csv
             csv.at[index,"md5sum_up"] = md5sum_up
             csv.at[index,"date_up"] = str(datetime.now().astimezone())
-            csv.at[index,"version"] = VERSION
+            
+            try: #these columns might not exist if data.csv was created with older version of camrcs
+                
+                csv.at[index,"version"] = VERSION
+                csv.at[index,"archive_size"] = file_size(archive)
+            
+            except KeyError: #just print to console
+                
+                click.echo(f"Total archive size is {file_size(archive)}")
                       
         
-    #update csv with md5sum hash/date
-    update_csv(csv)
+        #update csv with md5sum hash/date
+        update_csv(csv)
                 
     #remove archive and split archive files
     if not keep:
@@ -361,7 +396,6 @@ def version():
 cli.add_command(up)
 cli.add_command(down)
 cli.add_command(version)
-
 
 
 

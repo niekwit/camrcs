@@ -22,7 +22,7 @@ copyright = '2023, Niek Wit'
 author = 'Niek Wit'
 
 # The full version, including alpha/beta/rc tags
-release = '0.7'
+release = '0.7.1'
 
 
 # -- General configuration ---------------------------------------------------
