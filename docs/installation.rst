@@ -30,6 +30,14 @@ Via PyPi
 This will install the most recent stable version of `camrcs`.
 
 
+To update ``camrcs`` to the latest stable version:
+
+.. code-block:: console
+   
+   $ pip install camrcs --upgrade
+   
+
+
 pigz
 =======================
 
