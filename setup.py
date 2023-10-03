@@ -6,7 +6,7 @@ long_description = (this_directory / "README.md").read_text()
 
 setup(
     name='camrcs',
-    version='0.7.1',
+    version='0.8.0',
     py_modules=['camrcs'], 
     description='A package for management of Cambridge Research Cold Storage backups',
     long_description=long_description,

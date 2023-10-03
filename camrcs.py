@@ -3,8 +3,6 @@ import os
 import sys
 import os.path
 from os import path
-import pandas as pd
-import numpy as np
 import subprocess
 import hashlib
 from pathlib import Path
@@ -12,13 +10,15 @@ from datetime import datetime
 import time
 import timeit
 import glob
+import pandas as pd
+import numpy as np
 
-VERSION = "0.7.1"
+VERSION="0.8.0"
 
 #get current working dir
 cdir = os.getcwd()
- 
 
+ 
 ####Python functions####
 
 def md5(file):
@@ -27,6 +27,7 @@ def md5(file):
     
     hash_md5 = hashlib.md5()
     
+    #open file in smaller chunks to avoid memory issues
     with open(file, "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
             hash_md5.update(chunk)
@@ -53,7 +54,7 @@ def run(command):
         
         click.secho(error, fg="red")
         
-        sys.exit()
+        sys.exit(1)
 
 
 def update_csv(csv):
@@ -79,18 +80,18 @@ def total_run_time(start):
     click.echo(f"Total run time: {res}")
 
 
-#adapted from https://stackoverflow.com/questions/2104080/how-do-i-check-file-size-in-python#2104083
 def convert_bytes(num):
-    '''this function will convert bytes to MB.... GB... etc
+    '''Converts bytes to MB.... GB... etc
+    adapted from https://stackoverflow.com/questions/2104080/how-do-i-check-file-size-in-python#2104083
     '''
     
     for x in ['bytes', 'KB', 'MB', 'GB', 'TB']:
         
-        if num < 1024.0:
+        if num < 1000.0:
             
             return f'{num:.1f} {x}'
         
-        num /= 1024.0
+        num /= 1000.0
 
 
 def file_size(archive):
@@ -103,6 +104,10 @@ def file_size(archive):
     
     return convert_bytes(size)
 
+
+def test_csv():
+    
+    assert os.path.exists(os.path.join(cdir,"data.csv")) == True, "data.csv not found!"
 
 
 ####command line parser####
@@ -140,12 +145,22 @@ def up(csv,keep):
         
         header = "id,crsid,project_dir,date_up,date_down,temp_path,target_dir,remote_dest_dir,chunk_size,exclude_dir,md5sum_up,md5sum_down,archive_size,download_dir,version"
 
-        #write to file
-        with open(os.path.join(cdir,"data.csv"), "w") as text_file:
+        csv_file = os.path.join(cdir,"data.csv")
+        
+        if not os.path.exists(csv_file): #do not overwrite existing data.csv!
+        
+            #write to file
+            with open(csv_file, "w") as text_file:
+                
+                print(header, file=text_file)
+                
+            return
+        
+        else:
             
-            print(header, file=text_file)
+            click.secho("ERROR: data.csv already exists!", fg="red")
             
-        return
+            sys.exit(1)
         
     #open data.csv
     csv = pd.read_csv(os.path.join(cdir,"data.csv"))
@@ -323,31 +338,31 @@ def down(keep,target):
 
     
     click.echo("Concatenating archive parts...")
-        
+     
+    #concatenate each part in a for loop and delete each part as you go
+    #this will prevent the need for a large amount of disk space
     archive = os.path.join(download_dir,os.path.basename(target_dir)) + ".tar.gz"
     parts = f"{archive}.part-*"
-    cat = f"cat $(ls {parts}) > {archive}"
+        
+    cat = f"for f in $(ls {parts}); do cat $f >> {archive}; rm $f; done"
+                
     
     if run(cat):
         
         click.echo(f"Calculating md5sum for retrieved archive...")
         
-        csv.at[target,"md5sum_down"] = md5(archive)
+        md5sum_down = md5(archive)
         
         click.echo("Done...")
-    
-    
-    click.echo("Removing archive parts...")
-    remove = f"rm {parts}"
-    
-    if run(remove):
         
         click.echo(f"Comparing md5sum of uploaded archive vs retrieved archive...")
-    
         
-    if csv.at[target,"md5sum_down"] == md5sum_up:
+    
+    if md5sum_down == md5sum_up:
         
         click.echo("Retrieved archive correct...")
+        
+        csv.at[target,"md5sum_down"] = md5sum_down
                     
     else:
         
@@ -379,6 +394,36 @@ def down(keep,target):
     
     #display total run time
     total_run_time(start)
+
+
+@click.command(name="usage")
+
+def usage():
+    '''Print how much data has been uploaded to RCS
+    '''
+    
+    #open data.csv
+    csv = pd.read_csv(os.path.join(cdir,"data.csv"))
+    
+    #get size of each archive
+    archive_size = csv["archive_size"]
+    
+    #convert any amount in MB in archive_size to bytes
+    archive_size = archive_size.str.replace(" MB","e6")
+    
+    #convert any amount in GB in archive_size to bytes
+    archive_size = archive_size.str.replace(" GB","e9")
+    
+    #convert any amount in TB in archive_size to bytes
+    archive_size = archive_size.str.replace(" TB","e12")
+    
+    #convert to float
+    archive_size = archive_size.astype(float)
+    
+    #get total size of all archives
+    total_size = sum(archive_size)
+    
+    click.secho(f"Total size of all archives on RCS: {convert_bytes(total_size)}", fg="green")
     
     
 
@@ -396,6 +441,7 @@ def version():
 cli.add_command(up)
 cli.add_command(down)
 cli.add_command(version)
+cli.add_command(usage)
 
 
 
