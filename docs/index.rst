@@ -1,4 +1,12 @@
+.. image:: https://readthedocs.org/projects/camrcs/badge/?version=latest
+    :target: https://camrcs.readthedocs.io/en/latest/?badge=latest
+    :alt: Documentation Status
 
+.. image:: https://img.shields.io/pypi/v/camrcs.svg
+    :target: https://pypi.python.org/pypi/camrcs
+
+.. image:: https://img.shields.io/github/stars/niekwit/camrcs?style=social
+    :alt: GitHub stars
 
 Welcome to camrcs's documentation!
 ====================================
