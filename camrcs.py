@@ -11,10 +11,11 @@ import time
 import timeit
 import glob
 import logging
+from importlib.metadata import version
 import pandas as pd
 import numpy as np
 
-VERSION = "0.9.0"
+VERSION = version("camrcs")
 
 
 def setup_logging():
