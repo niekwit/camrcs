@@ -200,6 +200,9 @@ def up(csv, keep):
         archive = os.path.join(temp_path, f"{os.path.basename(target_dir)}.tar.gz")
         logging.info(f"Creating archive for {target_dir} at RCS...")
 
+        # Path where the md5sum is persisted alongside the split archive
+        md5sum_cache = f"{archive}.md5sum"
+
         # Check if archive has been split before
         if not os.path.exists(f"{archive}.split.done"):
             # Create archive
@@ -212,16 +215,18 @@ def up(csv, keep):
             print(tar)
             time.sleep(5)
 
-            # Get md5sum from text file
             if run(tar):
                 Path(os.path.join(f"{archive}.split.done")).touch()
-                # with open(md5sum_file) as f:
-                #    md5sum_up = f.readline().split("  ")[0]
-
-                # remove md5sum file
-                # os.remove(md5sum_file)
+                # Persist md5sum so it survives a failed rsync on re-run
+                md5sum_up = read_md5sum_file(md5sum_file)
+                with open(md5sum_cache, "w") as f:
+                    f.write(md5sum_up)
         else:
             logging.info(f"{archive} has been created and split before...")
+            if not os.path.exists(md5sum_cache):
+                logging.error(f"MD5 sum cache not found: {md5sum_cache}")
+                sys.exit(1)
+            md5sum_up = open(md5sum_cache).read().strip()
 
         # wait for user input (otherwise rsync can timeout if user does not promptly enter password)
         logging.info("Transferring split archive files to RCS...")
@@ -230,9 +235,6 @@ def up(csv, keep):
         rsync = f"rsync -v -h --progress $(ls {archive}.part-*) {crsid}@rcs.uis.cam.ac.uk:{project_dir}/{remote_dest_dir}"
 
         if run(rsync):
-            # get md5sum
-            md5sum_up = read_md5sum_file(md5sum_file)
-
             # update csv
             csv.at[index, "md5sum_up"] = md5sum_up
             csv.at[index, "date_up"] = str(datetime.now().astimezone())
