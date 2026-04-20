@@ -212,7 +212,7 @@ def up(csv, keep):
             target_name = os.path.basename(target_dir)
 
             tar = f'tar -vc -C {target_base} {exclude} {target_name} | pigz | tee >(md5sum > "{md5sum_file}") | split -b {chunk_size} - {archive}.part-'
-            print(tar)
+            logging.info(f"Running command: {tar}")
             time.sleep(5)
 
             if run(tar):
@@ -233,7 +233,7 @@ def up(csv, keep):
         input("Press Enter to continue...")
 
         rsync = f"rsync -v -h --progress $(ls {archive}.part-*) {crsid}@rcs.uis.cam.ac.uk:{project_dir}/{remote_dest_dir}"
-
+        logging.info(f"Running command: {rsync}")
         if run(rsync):
             # update csv
             csv.at[index, "md5sum_up"] = md5sum_up
@@ -303,6 +303,7 @@ def down(keep, target):
     archive = f"{os.path.basename(target_dir)}.tar.gz.part-*"
     archive = f"{os.path.join(project_dir,remote_dest_dir,archive)}"
     rsync = f"rsync -v -h {crsid}@rcs.uis.cam.ac.uk:{archive} {download_dir}"
+    logging.info(f"Running command: {rsync}")
 
     if run(rsync):
         csv.at[target, "date_down"] = str(datetime.now().astimezone())
@@ -337,10 +338,11 @@ def down(keep, target):
 
     if keep:
         untar = f"pigz -dk {archive} ; cd {download_dir}; tar -xvf {unzip_archive}; rm {unzip_archive}"
-
+        logging.info(f"Running command: {untar}")
     else:
         os.makedirs(download_dir, exist_ok=True)
         untar = f"pigz -d {archive} ; cd {download_dir}; tar -xvf {unzip_archive}; rm {unzip_archive}"
+        logging.info(f"Running command: {untar}")
 
     if run(untar):
         # update csv with md5 hash/date
