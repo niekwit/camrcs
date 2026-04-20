@@ -17,8 +17,7 @@ import numpy as np
 VERSION = "0.9.0"
 
 
-def logging():
-    # Setup logging (TO DO:only create when up/down/usage is called)
+def setup_logging():
     date_time = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
     log = f"camrcs_{date_time}.log"
     logging.basicConfig(
@@ -137,6 +136,7 @@ def cli():
 )
 def up(csv, keep):
     """Upload data to RCS"""
+    setup_logging()
     # Start total run timer
     start = timeit.default_timer()
     # Create empty data.csv if requested
@@ -271,6 +271,7 @@ def up(csv, keep):
 )
 def down(keep, target):
     """Retrieve data from RCS"""
+    setup_logging()
     # start run timer
     start = timeit.default_timer()
 
@@ -355,7 +356,7 @@ def usage():
     """Print how much data has been uploaded to RCS.
     This is calculated from the data.csv file and not by connecting to the RCS server.
     """
-
+    setup_logging()
     # open data.csv
     csv = pd.read_csv(os.path.join(cdir, "data.csv"))
 
