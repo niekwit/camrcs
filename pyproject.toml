@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "camrcs"
+version = "0.9.0"
+description = "A package for management of Cambridge Research Cold Storage backups"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Niek Wit", email = "nw416@cam.ac.uk" }]
+requires-python = ">=3.8"
+dependencies = [
+    "pandas",
+    "click",
+    "numpy",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Archiving :: Backup",
+]
+
+[project.urls]
+Documentation = "https://camrcs.readthedocs.io"
+Source = "https://github.com/niekwit/camrcs"
+
+[project.scripts]
+camrcs = "camrcs:cli"
+
+[tool.setuptools]
+py-modules = ["camrcs"]
