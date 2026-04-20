@@ -1,4 +1,4 @@
-import click
+import argparse
 import os
 import sys
 import os.path
@@ -121,20 +121,9 @@ def test_csv():
     assert os.path.exists(os.path.join(cdir, "data.csv")) == True, "data.csv not found!"
 
 
-#### Command line parser ####
-@click.group()
-def cli():
-    """Management of data backups to/from Cambridge University Research Cold Storage (RCS)"""
+#### Command functions ####
 
 
-# Define subparser for uploading data to RCS
-@click.command(name="up")
-@click.option(
-    "-k", "--keep", is_flag=True, help="Keep split archive files of target dir"
-)
-@click.option(
-    "-c", "--csv", is_flag=True, help="Create empty data.csv file in current directory"
-)
 def up(csv, keep):
     """Upload data to RCS"""
     setup_logging()
@@ -262,14 +251,6 @@ def up(csv, keep):
     total_run_time(start)
 
 
-# define subparser for retrieving data from RCS
-@click.command(name="down")
-@click.option(
-    "-k", "--keep", is_flag=True, help="Keep split archive files of target dir"
-)
-@click.option(
-    "-t", "--target", type=int, help="Target archive (id) to retrieve from RCS"
-)
 def down(keep, target):
     """Retrieve data from RCS"""
     setup_logging()
@@ -354,17 +335,14 @@ def down(keep, target):
     total_run_time(start)
 
 
-@click.command(name="usage")
 def usage():
-    """Print how much data has been uploaded to RCS.
-    This is calculated from the data.csv file and not by connecting to the RCS server.
-    """
+    """Print how much data has been uploaded to RCS."""
     setup_logging()
     # open data.csv
     csv = pd.read_csv(os.path.join(cdir, "data.csv"))
 
-    # get size of each archive
-    archive_size = csv["archive_size"]
+    # get size of each archive (ignore entries not yet uploaded)
+    archive_size = csv["archive_size"].dropna()
 
     # convert any amount in MB in archive_size to bytes
     archive_size = archive_size.str.replace(" MB", "e6")
@@ -384,14 +362,52 @@ def usage():
     logging.info(f"Total size of all archives on RCS: {convert_bytes(total_size)}")
 
 
-@click.command(name="version")
-def version():
-    """Print version and quit"""
-    click.secho(f"camrcs v{VERSION}", fg="green")
+#### Command line parser ####
 
 
-# add subparsers
-cli.add_command(up)
-cli.add_command(down)
-cli.add_command(version)
-cli.add_command(usage)
+def main():
+    parser = argparse.ArgumentParser(
+        description="Management of data backups to/from Cambridge University Research Cold Storage (RCS)"
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    # up
+    up_parser = subparsers.add_parser("up", help="Upload data to RCS")
+    up_parser.add_argument(
+        "-k", "--keep", action="store_true", help="Keep split archive files of target dir"
+    )
+    up_parser.add_argument(
+        "-c", "--csv", action="store_true", help="Create empty data.csv file in current directory"
+    )
+
+    # down
+    down_parser = subparsers.add_parser("down", help="Retrieve data from RCS")
+    down_parser.add_argument(
+        "-k", "--keep", action="store_true", help="Keep split archive files of target dir"
+    )
+    down_parser.add_argument(
+        "-t", "--target", type=int, help="Target archive (id) to retrieve from RCS"
+    )
+
+    # usage
+    subparsers.add_parser(
+        "usage",
+        help="Print how much data has been uploaded to RCS. "
+             "Calculated from data.csv, not by connecting to the RCS server.",
+    )
+
+    # version
+    subparsers.add_parser("version", help="Print version and quit")
+
+    args = parser.parse_args()
+
+    if args.command == "up":
+        up(args.csv, args.keep)
+    elif args.command == "down":
+        down(args.keep, args.target)
+    elif args.command == "usage":
+        usage()
+    elif args.command == "version":
+        print(f"camrcs v{VERSION}")
+    else:
+        parser.print_help()
