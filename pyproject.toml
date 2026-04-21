@@ -9,10 +9,9 @@ description = "A package for management of Cambridge Research Cold Storage backu
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Niek Wit", email = "nw416@cam.ac.uk" }]
-requires-python = ">=3.8"
+requires-python = ">=3.14"
 dependencies = [
     "pandas",
-    "click",
     "numpy",
 ]
 classifiers = [
@@ -29,7 +28,7 @@ Documentation = "https://camrcs.readthedocs.io"
 Source = "https://github.com/niekwit/camrcs"
 
 [project.scripts]
-camrcs = "camrcs:cli"
+camrcs = "camrcs:main"
 
 [tool.setuptools]
 py-modules = ["camrcs"]
