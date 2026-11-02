@@ -41,6 +41,8 @@ All options
 
 ``camrcs usage``: print the estimated size of all uploaded archives. This is calculated from *data.csv*, without connecting to the server.
 
+``camrcs manifest``: write *rcs_manifest.json* with all entries uploaded to RCS. See `Manifests`_.
+
 ``camrcs version``: print version and quit.
 
 All commands should be run from the directory containing *data.csv*. Each run of ``up``, ``down`` and ``usage`` writes a log file to this directory.
@@ -109,8 +111,25 @@ The workflow consists of the following steps for each directory:
         * The split file size can be set in *data.csv* under the *chunk_size* header
     4. Pressing Enter to start the upload, followed by logging in
         * The upload starts on request, as ``rsync`` can time out if the login is not completed promptly
-    5. Uploading of split tar file
+    5. Uploading of split tar file, and for RDV also a manifest (see `Manifests`_)
     6. Removal of the local split tar files in `temp_path`, unless ``--keep`` is used
+
+
+Manifests
+-------------------------
+
+Each upload to RDV includes a file named *<target directory>.tar.gz.manifest.json* alongside the split tar files. It describes the archive without needing *data.csv*: the entry in *data.csv*, its paths, the ``camrcs`` version, the md5sum of the archive, and the size and md5sum of each part. Generating the md5sum of each part adds some time before the upload.
+
+Files already on RCS have no manifest, as RCS is read-only. To record these entries in one file:
+
+.. code-block:: console
+
+    $ cd path/to/data.csv
+    $ camrcs manifest
+
+This writes *rcs_manifest.json* from *data.csv*, without connecting to the server. `may_be_stored_as_file` is true for entries that could be affected by the single-part upload bug (see `Retrieve data`_). The sizes in *data.csv* can only show that this is possible, so check these entries on the server.
+
+Keep *data.csv* safe too. ``camrcs`` keeps the previous version as *data.csv.bak* each time it updates the file.
 
 
 Retrieve data
