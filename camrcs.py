@@ -10,7 +10,9 @@ from datetime import datetime
 import time
 import timeit
 import glob
+import json
 import logging
+import shutil
 from importlib.metadata import version
 import pandas as pd
 import numpy as np
@@ -96,11 +98,25 @@ def read_csv():
     return csv.set_index("id")
 
 
-def update_csv(csv):
-    """Updates data.csv"""
-    # Overwrite csv with md5 hash/date
+def update_csv(entry, **values):
+    """Updates one entry in data.csv"""
     logging.info("Updating data.csv...")
-    csv.to_csv("data.csv")
+    csv_file = os.path.join(cdir, "data.csv")
+    temp_file = f"{csv_file}.tmp"
+
+    # read again to keep any changes made since the start of the run
+    csv = read_csv()
+    for column, value in values.items():
+        csv.loc[entry, column] = value
+
+    shutil.copy2(csv_file, f"{csv_file}.bak")
+    with open(temp_file, "w") as f:
+        csv.to_csv(f)
+        f.flush()
+        os.fsync(f.fileno())
+
+    # atomic: data.csv is always the complete old or new version
+    os.replace(temp_file, csv_file)
 
 
 def total_run_time(start):
@@ -151,6 +167,52 @@ def remote_host(project_dir):
 
     logging.error(f"project_dir ({project_dir}) should start with /rcs or /rdv!")
     sys.exit(1)
+
+
+def json_value(value):
+    """Converts a value from data.csv for JSON (empty values are NaN)"""
+    return value if type(value) == str else None
+
+
+def write_manifest(archive, entry, row, md5sum_up):
+    """Writes a manifest describing an archive, to be stored alongside its parts"""
+    parts = {}
+    for part in sorted(glob.glob(f"{archive}.part-*")):
+        logging.info(f"Calculating md5sum for {part}...")
+        parts[part.split(".")[-1]] = {"size": os.path.getsize(part), "md5": md5(part)}
+
+    manifest = {
+        "id": int(entry),
+        "archive": os.path.basename(archive),
+        "target_dir": row["target_dir"],
+        "project_dir": row["project_dir"],
+        "remote_dest_dir": row["remote_dest_dir"],
+        "date_created": str(datetime.now().astimezone()),
+        "camrcs_version": VERSION,
+        "md5sum_up": md5sum_up,
+        "parts": parts,
+    }
+
+    manifest_file = f"{archive}.manifest.json"
+    with open(manifest_file, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    return manifest_file
+
+
+def fits_in_one_part(archive_size, chunk_size):
+    """Checks if an archive may consist of one part, if sizes in data.csv allow it"""
+    size_units = {"MB": 1e6, "GB": 1e9, "TB": 1e12}
+    chunk_units = {"K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4}
+
+    try:
+        size, size_unit = archive_size.split()
+        size = float(size) * size_units[size_unit]
+        chunk = float(chunk_size[:-1]) * chunk_units[chunk_size[-1]]
+    except (AttributeError, KeyError, ValueError):  # size not recorded or not known
+        return True
+
+    return size <= chunk
 
 
 def has_single_part_bug(upload_version):
@@ -284,22 +346,23 @@ def up(csv, keep):
         logging.info("Transferring split archive files to RCS...")
         input("Press Enter to continue...")
 
+        # store a description of the archive alongside its parts on RDV
+        manifest_file = ""
+        if host == "rdv.uis.cam.ac.uk":
+            manifest_file = write_manifest(archive, index, row, md5sum_up)
+
         # trailing slash: without it a single-part archive is written as a file named remote_dest_dir
-        rsync = f"rsync -v -h --progress $(ls {archive}.part-*) {crsid}@{host}:{project_dir}/{remote_dest_dir}/"
+        rsync = f"rsync -v -h --progress $(ls {archive}.part-*) {manifest_file} {crsid}@{host}:{project_dir}/{remote_dest_dir}/"
         logging.info(f"Running command: {rsync}")
         if run(rsync):
-            # update csv
-            csv.at[index, "md5sum_up"] = md5sum_up
-            csv.at[index, "date_up"] = str(datetime.now().astimezone())
-
-            try:  # these columns might not exist if data.csv was created with older version of camrcs
-                csv.at[index, "version"] = VERSION
-                csv.at[index, "archive_size"] = file_size(archive)
-            except KeyError:  # just print to console
-                logging.info(f"Total archive size is {file_size(archive)}")
-
-        # update csv with md5sum hash/date
-        update_csv(csv)
+            # update csv with md5sum hash/date
+            update_csv(
+                index,
+                md5sum_up=md5sum_up,
+                date_up=str(datetime.now().astimezone()),
+                version=VERSION,
+                archive_size=file_size(archive),
+            )
 
         # remove archive and split archive files
         if not keep:
@@ -359,7 +422,7 @@ def down(keep, target):
     logging.info(f"Running command: {rsync}")
 
     if run(rsync):
-        csv.at[target, "date_down"] = str(datetime.now().astimezone())
+        date_down = str(datetime.now().astimezone())
 
     logging.info("Concatenating archive parts...")
 
@@ -377,7 +440,6 @@ def down(keep, target):
 
     if md5sum_down == md5sum_up:
         logging.info("Retrieved archive correct...")
-        csv.at[target, "md5sum_down"] = md5sum_down
 
     else:
         logging.error(f"Retrieved archive incorrect...\nRun camrcs again!")
@@ -399,7 +461,7 @@ def down(keep, target):
 
     if run(untar):
         # update csv with md5 hash/date
-        update_csv(csv)
+        update_csv(target, date_down=date_down, md5sum_down=md5sum_down)
         logging.info("Finished!")
 
     # display total run time
@@ -433,6 +495,49 @@ def usage():
     logging.info(
         f"Total estimated size of all archives on RCS: {convert_bytes(total_size)}"
     )
+
+
+def manifest():
+    """Create one manifest for all entries uploaded to RCS, from data.csv"""
+    setup_logging()
+    # open data.csv
+    csv = read_csv()
+
+    # select entries uploaded to RCS
+    is_rcs = csv["project_dir"].str.startswith("/rcs", na=False)
+    csv_rcs = csv[is_rcs & csv["date_up"].notnull()]
+
+    entries = []
+    for index, row in csv_rcs.iterrows():
+        version = row.get("version")
+        archive_size = row.get("archive_size")
+        chunk_size = row["chunk_size"]
+
+        entries.append(
+            {
+                "id": int(index),
+                "archive": f"{os.path.basename(row['target_dir'])}.tar.gz",
+                "target_dir": row["target_dir"],
+                "project_dir": row["project_dir"],
+                "remote_dest_dir": row["remote_dest_dir"],
+                "date_up": row["date_up"],
+                "camrcs_version": json_value(version),
+                "md5sum_up": json_value(row["md5sum_up"]),
+                "archive_size": json_value(archive_size),
+                "chunk_size": json_value(chunk_size),
+                # remote_dest_dir may be the archive itself: this needs checking on the server
+                "may_be_stored_as_file": bool(
+                    has_single_part_bug(version)
+                    and fits_in_one_part(archive_size, chunk_size)
+                ),
+            }
+        )
+
+    manifest_file = os.path.join(cdir, "rcs_manifest.json")
+    with open(manifest_file, "w") as f:
+        json.dump(entries, f, indent=2)
+
+    logging.info(f"Wrote {len(entries)} RCS entries to {manifest_file}")
 
 
 #### Command line parser ####
@@ -478,6 +583,13 @@ def main():
         "Calculated from data.csv, not by connecting to the RCS server.",
     )
 
+    # manifest
+    subparsers.add_parser(
+        "manifest",
+        help="Create rcs_manifest.json with all entries uploaded to RCS. "
+        "Calculated from data.csv, not by connecting to the RCS server.",
+    )
+
     # version
     subparsers.add_parser("version", help="Print version and quit")
 
@@ -489,6 +601,8 @@ def main():
         down(args.keep, args.target)
     elif args.command == "usage":
         usage()
+    elif args.command == "manifest":
+        manifest()
     elif args.command == "version":
         print(f"camrcs v{VERSION}")
     else:

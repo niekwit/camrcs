@@ -156,3 +156,8 @@ cython_debug/
 
 # locally built docs
 test_docs/
+
+# local camrcs records
+data.csv.bak
+data.csv.tmp
+rcs_manifest.json
