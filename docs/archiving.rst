@@ -119,7 +119,7 @@ The workflow consists of the following steps for each directory:
 Manifests
 -------------------------
 
-Each upload to RDV includes a file named *<target directory>.tar.gz.manifest.json* alongside the split tar files. It describes the archive without needing *data.csv*: the entry in *data.csv*, its paths, the ``camrcs`` version, the md5sum of the archive, and the size and md5sum of each part. Generating the md5sum of each part adds some time before ``camrcs`` asks to press Enter.
+Each upload to RDV includes a file named *<target directory>.tar.gz.manifest.json* alongside the split tar files. It describes the archive without needing *data.csv*: the entry in *data.csv*, its paths, the ``camrcs`` version, the md5sum of the archive, and the size and md5sum of each part. Generating the md5sum of each part adds some time before ``camrcs`` asks to press Enter. If ``camrcs`` is cancelled, it continues from the last finished part when run again, as the md5sums are saved in *<target directory>.tar.gz.part_md5sums.json* in `temp_path` until the upload is finished.
 
 Files already on RCS have no manifest, as RCS is read-only. To record these entries in one file:
 
