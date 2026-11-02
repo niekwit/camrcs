@@ -109,16 +109,17 @@ The workflow consists of the following steps for each directory:
         * This can be used to check data integrity when retrieving the archive
     3. Splitting of tar file into multiple parts
         * The split file size can be set in *data.csv* under the *chunk_size* header
-    4. Pressing Enter to start the upload, followed by logging in
+    4. Generation of the manifest, for RDV only (see `Manifests`_)
+    5. Pressing Enter to start the upload, followed by logging in
         * The upload starts on request, as ``rsync`` can time out if the login is not completed promptly
-    5. Uploading of split tar file, and for RDV also a manifest (see `Manifests`_)
-    6. Removal of the local split tar files in `temp_path`, unless ``--keep`` is used
+    6. Uploading of split tar file, and for RDV also the manifest
+    7. Removal of the local split tar files in `temp_path`, unless ``--keep`` is used
 
 
 Manifests
 -------------------------
 
-Each upload to RDV includes a file named *<target directory>.tar.gz.manifest.json* alongside the split tar files. It describes the archive without needing *data.csv*: the entry in *data.csv*, its paths, the ``camrcs`` version, the md5sum of the archive, and the size and md5sum of each part. Generating the md5sum of each part adds some time before the upload.
+Each upload to RDV includes a file named *<target directory>.tar.gz.manifest.json* alongside the split tar files. It describes the archive without needing *data.csv*: the entry in *data.csv*, its paths, the ``camrcs`` version, the md5sum of the archive, and the size and md5sum of each part. Generating the md5sum of each part adds some time before ``camrcs`` asks to press Enter.
 
 Files already on RCS have no manifest, as RCS is read-only. To record these entries in one file:
 

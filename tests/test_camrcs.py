@@ -294,3 +294,27 @@ def test_up_keeps_archive_if_entry_changed_during_upload(upload_dir, monkeypatch
     assert isinstance(csv.loc[2, "date_up"], str)
     assert (temp_path / "exp1.tar.gz.part-aa").exists()
     assert not (temp_path / "exp2.tar.gz.part-aa").exists()
+
+
+def test_up_asks_for_enter_directly_before_rsync(upload_dir, monkeypatch):
+    # rsync can time out if the login does not directly follow pressing Enter
+    write_upload_csv(upload_dir.path, ["exp1"])
+    steps = []
+    md5 = camrcs.md5
+    run_without_transfer = camrcs.run
+
+    def record_md5(file):
+        steps.append("md5")
+        return md5(file)
+
+    def record_rsync(command, message=None):
+        if command.startswith("rsync"):
+            steps.append("rsync")
+        return run_without_transfer(command, message)
+
+    monkeypatch.setattr(camrcs, "md5", record_md5)
+    monkeypatch.setattr(camrcs, "run", record_rsync)
+    monkeypatch.setattr("builtins.input", lambda *args: steps.append("enter"))
+    camrcs.up(False, False)
+
+    assert steps == ["md5", "enter", "rsync"]

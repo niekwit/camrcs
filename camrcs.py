@@ -359,14 +359,15 @@ def up(csv, keep):
                 sys.exit(1)
             md5sum_up = open(md5sum_cache).read().strip()
 
-        # wait for user input (otherwise rsync can timeout if user does not promptly enter password)
-        logging.info("Transferring split archive files to RCS...")
-        input("Press Enter to continue...")
-
         # store a description of the archive alongside its parts on RDV
         manifest_file = ""
         if host == "rdv.uis.cam.ac.uk":
             manifest_file = write_manifest(archive, index, row, md5sum_up)
+
+        # wait for user input (otherwise rsync can timeout if user does not promptly enter password)
+        # this should stay directly before rsync, after all slow steps
+        logging.info("Transferring split archive files to RCS...")
+        input("Press Enter to continue...")
 
         # trailing slash: without it a single-part archive is written as a file named remote_dest_dir
         rsync = f"rsync -v -h --progress $(ls {archive}.part-*) {manifest_file} {crsid}@{host}:{project_dir}/{remote_dest_dir}/"
