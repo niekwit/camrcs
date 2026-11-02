@@ -44,7 +44,7 @@ Creating remote destination directory on RCS
 
 Due to an older version of ``rsync`` running on the RCS server, it is currently not possible to create a multiple level path set by `remote_dest_dir` in *data.csv* if at least two levels of this path do not yet exist.
 
-In this case, the user has to create this path manually using ``sftp``.
+In this case, the user has to create this path manually using ``sftp``. If `project_dir` in *data.csv* starts with `/rdv`, connect to ``rdv.uis.cam.ac.uk`` instead of ``rcs.uis.cam.ac.uk``. camrcs selects this address automatically.
 
 For example, to store data in the new path `data/exp1` run:
 
@@ -94,6 +94,9 @@ To retrieve data from RCS:
     $ camrcs down -t 1
 
 The value of the ``-t`` flag should correspond to the ``id`` header in *data.csv*.
+
+.. note::
+   Before version 0.10.0, an archive consisting of a single part could be stored on RCS as a file named `remote_dest_dir`, if that directory did not yet exist. ``camrcs down`` detects this for entries in *data.csv* uploaded with these versions, which requires one extra login to RCS.
 
 The workflow consists of the following steps:
 
