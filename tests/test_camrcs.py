@@ -154,7 +154,7 @@ def test_update_csv_keeps_changes_made_during_run(upload_dir, monkeypatch):
 def test_update_csv_keeps_backup_and_no_temporary_file(upload_dir):
     write_upload_csv(upload_dir.path, ["exp1"])
     before = (upload_dir.path / "data.csv").read_text()
-    camrcs.update_csv(1, md5sum_up="def")
+    assert camrcs.update_csv(1, camrcs.read_csv().loc[1], md5sum_up="def")
 
     assert (upload_dir.path / "data.csv.bak").read_text() == before
     assert not (upload_dir.path / "data.csv.tmp").exists()
@@ -170,15 +170,17 @@ def test_update_csv_leaves_data_csv_intact_on_failure(upload_dir, monkeypatch):
 
     monkeypatch.setattr(camrcs.os, "replace", fail)
     with pytest.raises(OSError):
-        camrcs.update_csv(1, md5sum_up="def")
+        camrcs.update_csv(1, camrcs.read_csv().loc[1], md5sum_up="def")
 
     assert (upload_dir.path / "data.csv").read_text() == before
 
 
 def test_update_csv_adds_missing_column(upload_dir):
     # data.csv created with older version of camrcs
-    (upload_dir.path / "data.csv").write_text("id,crsid\n1,nw416\n")
-    camrcs.update_csv(1, version="0.10.0")
+    (upload_dir.path / "data.csv").write_text(
+        "id,project_dir,target_dir,remote_dest_dir\n1,/rdv/p,/d/exp,x\n"
+    )
+    camrcs.update_csv(1, camrcs.read_csv().loc[1], version="0.10.0")
 
     assert rows(upload_dir.path).loc[1, "version"] == "0.10.0"
 
@@ -234,3 +236,61 @@ def test_manifest_contains_uploaded_rcs_entries(upload_dir):
     assert entries[0]["archive"] == "single.tar.gz"
     assert entries[0]["md5sum_up"] == "abc"
     assert entries[3]["camrcs_version"] is None
+
+
+@pytest.mark.parametrize(
+    "archive_size, chunk_size, expected",
+    [
+        ("1.1 GB", "1G", True),  # may be 1.06 GB, which fits in a 1G chunk
+        ("1.2 GB", "1G", False),
+        ("978.0 MB", "1G", True),
+        ("203.2 GB", "300G", True),
+        (float("nan"), "1G", True),
+    ],
+)
+def test_fits_in_one_part(archive_size, chunk_size, expected):
+    assert camrcs.fits_in_one_part(archive_size, chunk_size) == expected
+
+
+def test_update_csv_does_not_recreate_deleted_entry(upload_dir):
+    write_upload_csv(upload_dir.path, ["exp1"])
+    row = camrcs.read_csv().loc[1]
+    (upload_dir.path / "data.csv").write_text(HEADER + "\n")
+
+    assert not camrcs.update_csv(1, row, md5sum_up="def")
+    assert (upload_dir.path / "data.csv").read_text() == HEADER + "\n"
+
+
+@pytest.mark.parametrize("column", ["project_dir", "target_dir", "remote_dest_dir"])
+def test_update_csv_does_not_update_changed_entry(upload_dir, column):
+    write_upload_csv(upload_dir.path, ["exp1"])
+    row = camrcs.read_csv().loc[1].copy()
+    before = (upload_dir.path / "data.csv").read_text()
+    row[column] = "/value/before/transfer"
+
+    assert not camrcs.update_csv(1, row, md5sum_up="def")
+    assert (upload_dir.path / "data.csv").read_text() == before
+
+
+def test_up_keeps_archive_if_entry_changed_during_upload(upload_dir, monkeypatch):
+    temp_path = write_upload_csv(upload_dir.path, ["exp1", "exp2"])
+    run_without_transfer = camrcs.run
+
+    def edit_during_transfer(command, message=None):
+        if command.startswith("rsync") and "exp1" in command:
+            csv_file = upload_dir.path / "data.csv"
+            csv_file.write_text(
+                csv_file.read_text().replace("ngsdata/exp1", "ngsdata/moved")
+            )
+        return run_without_transfer(command, message)
+
+    monkeypatch.setattr(camrcs, "run", edit_during_transfer)
+    camrcs.up(False, False)
+
+    # the changed entry is not recorded or removed, the next entry continues as usual
+    csv = rows(upload_dir.path)
+    assert pd.isnull(csv.loc[1, "date_up"])
+    assert csv.loc[1, "remote_dest_dir"] == "ngsdata/moved"
+    assert isinstance(csv.loc[2, "date_up"], str)
+    assert (temp_path / "exp1.tar.gz.part-aa").exists()
+    assert not (temp_path / "exp2.tar.gz.part-aa").exists()

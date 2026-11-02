@@ -131,6 +131,8 @@ This writes *rcs_manifest.json* from *data.csv*, without connecting to the serve
 
 Keep *data.csv* safe too. ``camrcs`` keeps the previous version as *data.csv.bak* each time it updates the file.
 
+Other entries in *data.csv* can be edited during a transfer. If the entry being transferred is deleted, or its `project_dir`, `target_dir` or `remote_dest_dir` changes, ``camrcs`` does not update it. The values that could not be recorded are logged instead, and after an upload the local archive files of that entry are kept.
+
 
 Retrieve data
 -------------------------

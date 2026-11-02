@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "camrcs"
-version = "0.10.0"
+version = "0.11.0"
 description = "A package for management of Cambridge Research Cold Storage backups"
 readme = "README.md"
 license = { text = "MIT" }
