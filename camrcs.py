@@ -23,6 +23,9 @@ VERSION = version("camrcs")
 # named remote_dest_dir, instead of inside a directory of that name
 SINGLE_PART_FIX_VERSION = (0, 10, 0)
 
+# Columns that identify what was transferred for an entry
+IDENTITY_COLUMNS = ["project_dir", "target_dir", "remote_dest_dir"]
+
 STRING_COLUMNS = [
     "date_up",
     "date_down",
@@ -98,14 +101,25 @@ def read_csv():
     return csv.set_index("id")
 
 
-def update_csv(entry, **values):
-    """Updates one entry in data.csv"""
+def update_csv(entry, row, **values):
+    """Updates one entry in data.csv, unless row (read before the transfer) no longer matches it"""
     logging.info("Updating data.csv...")
     csv_file = os.path.join(cdir, "data.csv")
     temp_file = f"{csv_file}.tmp"
 
     # read again to keep any changes made since the start of the run
     csv = read_csv()
+
+    # do not record the transfer in an entry that was deleted or changed during it
+    if entry not in csv.index or any(
+        csv.at[entry, column] != row[column] for column in IDENTITY_COLUMNS
+    ):
+        logging.error(
+            f"Entry {entry} was deleted or changed during the transfer, so data.csv was not updated!"
+        )
+        logging.error(f"Transfer of {row['target_dir']}: {values}")
+        return False
+
     for column, value in values.items():
         csv.loc[entry, column] = value
 
@@ -117,6 +131,8 @@ def update_csv(entry, **values):
 
     # atomic: data.csv is always the complete old or new version
     os.replace(temp_file, csv_file)
+
+    return True
 
 
 def total_run_time(start):
@@ -207,7 +223,8 @@ def fits_in_one_part(archive_size, chunk_size):
 
     try:
         size, size_unit = archive_size.split()
-        size = float(size) * size_units[size_unit]
+        # the size is rounded to one decimal, so it may be up to 0.05 smaller
+        size = (float(size) - 0.05) * size_units[size_unit]
         chunk = float(chunk_size[:-1]) * chunk_units[chunk_size[-1]]
     except (AttributeError, KeyError, ValueError):  # size not recorded or not known
         return True
@@ -356,13 +373,19 @@ def up(csv, keep):
         logging.info(f"Running command: {rsync}")
         if run(rsync):
             # update csv with md5sum hash/date
-            update_csv(
+            saved = update_csv(
                 index,
+                row,
                 md5sum_up=md5sum_up,
                 date_up=str(datetime.now().astimezone()),
                 version=VERSION,
                 archive_size=file_size(archive),
             )
+
+            # do not remove the only local copy of an upload that was not recorded
+            if not saved:
+                logging.error(f"Keeping all archive files of {archive}...")
+                continue
 
         # remove archive and split archive files
         if not keep:
@@ -461,7 +484,7 @@ def down(keep, target):
 
     if run(untar):
         # update csv with md5 hash/date
-        update_csv(target, date_down=date_down, md5sum_down=md5sum_down)
+        update_csv(target, row, date_down=date_down, md5sum_down=md5sum_down)
         logging.info("Finished!")
 
     # display total run time
