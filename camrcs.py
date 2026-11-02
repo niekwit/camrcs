@@ -17,6 +17,19 @@ import numpy as np
 
 VERSION = version("camrcs")
 
+# Uploads by earlier versions may have stored a single-part archive as a file
+# named remote_dest_dir, instead of inside a directory of that name
+SINGLE_PART_FIX_VERSION = (0, 10, 0)
+
+STRING_COLUMNS = [
+    "date_up",
+    "date_down",
+    "md5sum_up",
+    "md5sum_down",
+    "archive_size",
+    "version",
+]
+
 
 def setup_logging():
     date_time = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
@@ -71,6 +84,18 @@ def run(command, message=None):
         sys.exit(1)
 
 
+def read_csv():
+    """Reads data.csv"""
+    # columns written to by camrcs must be strings: empty columns would otherwise
+    # be read as floats, which pandas>=3 does not allow strings to be written to
+    csv = pd.read_csv(
+        os.path.join(cdir, "data.csv"),
+        dtype={column: str for column in STRING_COLUMNS},
+    )
+
+    return csv.set_index("id")
+
+
 def update_csv(csv):
     """Updates data.csv"""
     # Overwrite csv with md5 hash/date
@@ -117,6 +142,43 @@ def read_md5sum_file(file):
     return md5sum
 
 
+def remote_host(project_dir):
+    """Returns login address of the storage service that holds project_dir"""
+    if project_dir.startswith("/rdv"):
+        return "rdv.uis.cam.ac.uk"
+    elif project_dir.startswith("/rcs"):
+        return "rcs.uis.cam.ac.uk"
+
+    logging.error(f"project_dir ({project_dir}) should start with /rcs or /rdv!")
+    sys.exit(1)
+
+
+def has_single_part_bug(upload_version):
+    """Checks if a version from data.csv predates the single-part upload fix"""
+    if type(upload_version) != str:  # no version recorded (older data.csv)
+        return True
+
+    return tuple(int(x) for x in upload_version.split(".")) < SINGLE_PART_FIX_VERSION
+
+
+def remote_path_is_file(remote_path):
+    """Checks if a remote path is a regular file (requires a separate RCS login)"""
+    logging.info(f"Checking if {remote_path} is a file...")
+    result = subprocess.run(
+        f"rsync --list-only {remote_path}",
+        shell=True,
+        executable="/bin/bash",
+        stdout=subprocess.PIPE,
+        universal_newlines=True,
+    )
+    if result.returncode != 0:
+        logging.error(f"Could not list {remote_path}")
+        sys.exit(1)
+
+    # last line, as any login message is printed before the listing
+    return result.stdout.strip().splitlines()[-1].startswith("-")
+
+
 def test_csv():
     assert os.path.exists(os.path.join(cdir, "data.csv")) == True, "data.csv not found!"
 
@@ -144,8 +206,7 @@ def up(csv, keep):
             sys.exit(1)
 
     # Open data.csv
-    csv = pd.read_csv(os.path.join(cdir, "data.csv"))
-    csv = csv.set_index("id")
+    csv = read_csv()
 
     # Get directories that have to be uploaded (no date for upload)
     csv_up = csv[csv["date_up"].isnull()]
@@ -163,6 +224,7 @@ def up(csv, keep):
         # Get info
         crsid = row["crsid"]
         project_dir = row["project_dir"]
+        host = remote_host(project_dir)
         temp_path = row["temp_path"]
         target_dir = row["target_dir"]
         remote_dest_dir = row["remote_dest_dir"]
@@ -222,7 +284,8 @@ def up(csv, keep):
         logging.info("Transferring split archive files to RCS...")
         input("Press Enter to continue...")
 
-        rsync = f"rsync -v -h --progress $(ls {archive}.part-*) {crsid}@rcs.uis.cam.ac.uk:{project_dir}/{remote_dest_dir}"
+        # trailing slash: without it a single-part archive is written as a file named remote_dest_dir
+        rsync = f"rsync -v -h --progress $(ls {archive}.part-*) {crsid}@{host}:{project_dir}/{remote_dest_dir}/"
         logging.info(f"Running command: {rsync}")
         if run(rsync):
             # update csv
@@ -238,14 +301,14 @@ def up(csv, keep):
         # update csv with md5sum hash/date
         update_csv(csv)
 
-    # remove archive and split archive files
-    if not keep:
-        logging.info("Removing all archive files...")
-        remove = f"rm -r {archive}*"
-    else:
-        logging.info("Keeping all split archive files...")
-    if run(remove):
-        logging.info("Finished!")
+        # remove archive and split archive files
+        if not keep:
+            logging.info("Removing all archive files...")
+            run(f"rm -r {archive}*")
+        else:
+            logging.info("Keeping all split archive files...")
+
+    logging.info("Finished!")
 
     # display total run time
     total_run_time(start)
@@ -258,8 +321,7 @@ def down(keep, target):
     start = timeit.default_timer()
 
     # open data.csv
-    csv = pd.read_csv(os.path.join(cdir, "data.csv"))
-    csv = csv.set_index("id")
+    csv = read_csv()
 
     # select row with relevant information
     row = csv.loc[target]
@@ -282,9 +344,18 @@ def down(keep, target):
         sys.exit()
 
     # create rsync command
-    archive = f"{os.path.basename(target_dir)}.tar.gz.part-*"
-    archive = f"{os.path.join(project_dir,remote_dest_dir,archive)}"
-    rsync = f"rsync -v -h {crsid}@rcs.uis.cam.ac.uk:{archive} {download_dir}"
+    archive = f"{os.path.basename(target_dir)}.tar.gz.part-"
+    remote_dir = f"{crsid}@{remote_host(project_dir)}:{os.path.join(project_dir,remote_dest_dir)}"
+    if has_single_part_bug(row.get("version")) and remote_path_is_file(remote_dir):
+        logging.warning(
+            "remote_dest_dir is a file: it is the only part of the archive (see single-part upload bug)..."
+        )
+        # restore the name of the part, as it was lost on upload
+        os.makedirs(download_dir, exist_ok=True)
+        part = os.path.join(download_dir, f"{archive}aa")
+        rsync = f"rsync -v -h {remote_dir} {part}"
+    else:
+        rsync = f"rsync -v -h {remote_dir}/{archive}* {download_dir}"
     logging.info(f"Running command: {rsync}")
 
     if run(rsync):
@@ -359,7 +430,9 @@ def usage():
     # get total size of all archives
     total_size = sum(archive_size)
 
-    logging.info(f"Total size of all archives on RCS: {convert_bytes(total_size)}")
+    logging.info(
+        f"Total estimated size of all archives on RCS: {convert_bytes(total_size)}"
+    )
 
 
 #### Command line parser ####
@@ -374,16 +447,25 @@ def main():
     # up
     up_parser = subparsers.add_parser("up", help="Upload data to RCS")
     up_parser.add_argument(
-        "-k", "--keep", action="store_true", help="Keep split archive files of target dir"
+        "-k",
+        "--keep",
+        action="store_true",
+        help="Keep split archive files of target dir",
     )
     up_parser.add_argument(
-        "-c", "--csv", action="store_true", help="Create empty data.csv file in current directory"
+        "-c",
+        "--csv",
+        action="store_true",
+        help="Create empty data.csv file in current directory",
     )
 
     # down
     down_parser = subparsers.add_parser("down", help="Retrieve data from RCS")
     down_parser.add_argument(
-        "-k", "--keep", action="store_true", help="Keep split archive files of target dir"
+        "-k",
+        "--keep",
+        action="store_true",
+        help="Keep retrieved compressed archive after unpacking",
     )
     down_parser.add_argument(
         "-t", "--target", type=int, help="Target archive (id) to retrieve from RCS"
@@ -393,7 +475,7 @@ def main():
     subparsers.add_parser(
         "usage",
         help="Print how much data has been uploaded to RCS. "
-             "Calculated from data.csv, not by connecting to the RCS server.",
+        "Calculated from data.csv, not by connecting to the RCS server.",
     )
 
     # version

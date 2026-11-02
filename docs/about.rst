@@ -4,7 +4,7 @@ About camrcs
 
 ``camrcs`` is developed by Dr. Niek Wit from the University of Cambridge under the MIT license:
 
-Copyright (c) 2023 Niek Wit
+Copyright (c) 2023-2026 Niek Wit
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
