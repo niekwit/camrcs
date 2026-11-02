@@ -222,7 +222,8 @@ def up(csv, keep):
         logging.info("Transferring split archive files to RCS...")
         input("Press Enter to continue...")
 
-        rsync = f"rsync -v -h --progress $(ls {archive}.part-*) {crsid}@rcs.uis.cam.ac.uk:{project_dir}/{remote_dest_dir}"
+        # trailing slash: without it a single-part archive is written as a file named remote_dest_dir
+        rsync = f"rsync -v -h --progress $(ls {archive}.part-*) {crsid}@rcs.uis.cam.ac.uk:{project_dir}/{remote_dest_dir}/"
         logging.info(f"Running command: {rsync}")
         if run(rsync):
             # update csv
