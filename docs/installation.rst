@@ -41,7 +41,7 @@ To update ``camrcs`` to the latest stable version:
 pigz
 =======================
 
-``camrcs`` uses ``pigz`` for data compression
+``camrcs`` uses ``pigz`` for data compression. It also needs ``rsync``, which can be installed the same way.
 
 Debian-based GNU/Linux
 -----------------------
@@ -81,6 +81,9 @@ MacOS
 .. code-block:: console
    
    $ brew install pigz
+
+
+.. note:: ``camrcs`` has not been tested on MacOS, and it also needs ``md5sum``, which is part of the Homebrew ``coreutils`` package.
 
 
 

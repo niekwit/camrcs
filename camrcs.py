@@ -301,14 +301,14 @@ def up(csv, keep):
         # update csv with md5sum hash/date
         update_csv(csv)
 
-    # remove archive and split archive files
-    if not keep:
-        logging.info("Removing all archive files...")
-        remove = f"rm -r {archive}*"
-    else:
-        logging.info("Keeping all split archive files...")
-    if run(remove):
-        logging.info("Finished!")
+        # remove archive and split archive files
+        if not keep:
+            logging.info("Removing all archive files...")
+            run(f"rm -r {archive}*")
+        else:
+            logging.info("Keeping all split archive files...")
+
+    logging.info("Finished!")
 
     # display total run time
     total_run_time(start)
@@ -465,7 +465,7 @@ def main():
         "-k",
         "--keep",
         action="store_true",
-        help="Keep split archive files of target dir",
+        help="Keep retrieved compressed archive after unpacking",
     )
     down_parser.add_argument(
         "-t", "--target", type=int, help="Target archive (id) to retrieve from RCS"

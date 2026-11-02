@@ -2,23 +2,48 @@
 User guide
 =============
 
+RCS and RDV
+-------------
+
+``camrcs`` works with both Research Cold Storage (RCS) and its replacement, `Research DataVault (RDV) <https://docs.hpc.cam.ac.uk/storage/rdv/index.html>`_. The login address is selected for each entry from `project_dir` in *data.csv*:
+
+.. csv-table::
+   :header: "project_dir starts with", "Login address"
+
+   "``/rdv``", "``rdv.uis.cam.ac.uk``"
+   "``/rcs``", "``rcs.uis.cam.ac.uk``"
+
+``camrcs`` stops with an error if `project_dir` starts with anything else.
+
+.. warning:: RCS is now read-only, so new uploads should go to RDV. Once data has moved to RDV, update `project_dir` of the entries in *data.csv*.
+
 
 All options
 -------------
 
-.. click:: camrcs:up
-   :prog: camrcs up
-   :nested: full
+``camrcs up``: upload all entries in *data.csv* without a value for `date_up`.
 
+.. csv-table::
+   :header: "Option", "Description"
+   :widths: 20, 80
 
-.. click:: camrcs:down
-   :prog: camrcs down
-   :nested: full
+   "``-k``, ``--keep``", "Keep split archive files of target dir"
+   "``-c``, ``--csv``", "Create empty *data.csv* file in current directory"
 
+``camrcs down``: retrieve one archive.
 
-.. click:: camrcs:version
-   :prog: camrcs version
-   :nested: full
+.. csv-table::
+   :header: "Option", "Description"
+   :widths: 20, 80
+
+   "``-t``, ``--target``", "Target archive (``id`` in *data.csv*) to retrieve"
+   "``-k``, ``--keep``", "Keep the retrieved compressed archive (*.tar.gz*) after unpacking"
+
+``camrcs usage``: print the estimated size of all uploaded archives. This is calculated from *data.csv*, without connecting to the server.
+
+``camrcs version``: print version and quit.
+
+All commands should be run from the directory containing *data.csv*. Each run of ``up``, ``down`` and ``usage`` writes a log file to this directory.
 
 
 Create data.csv file
@@ -29,84 +54,85 @@ Create data.csv file
 .. csv-table:: data.csv
    :file: data_pre.csv
    :header-rows: 1
-   
+
 
 An empty *data.csv* file can be generated before first use:
 
 .. code-block:: console
-   
+
     $ cd path/to/storefile
     $ camrcs up --csv
 
+`date_up`, `date_down`, `md5sum_up`, `md5sum_down`, `archive_size` and `version` are filled in by ``camrcs``. `download_dir` is only used by ``camrcs down``, so it can be added when an archive is retrieved.
 
-Creating remote destination directory on RCS
+.. warning:: Check `remote_dest_dir` before uploading. Files may not be renamed or moved on the server afterwards.
+
+
+Creating remote destination directory
 -----------------------------------------------
 
-Due to an older version of ``rsync`` running on the RCS server, it is currently not possible to create a multiple level path set by `remote_dest_dir` in *data.csv* if at least two levels of this path do not yet exist.
-
-In this case, the user has to create this path manually using ``sftp``. If `project_dir` in *data.csv* starts with `/rdv`, connect to ``rdv.uis.cam.ac.uk`` instead of ``rcs.uis.cam.ac.uk``. camrcs selects this address automatically.
+``rsync`` only creates the last directory of `remote_dest_dir`. If higher levels of this path do not yet exist, the user has to create them manually using ``sftp``, connecting to the login address for `project_dir`.
 
 For example, to store data in the new path `data/exp1` run:
 
 .. code-block:: console
-   
-    $ sftp <crsid>@rcs.uis.cam.ac.uk
-    $ Password:
-    $ Connected to rcs.uis.cam.ac.uk.
-    $ cd rcs-<PIs CRSID>-<Project Name>
-    $ mkdir data
-    $ mkdir data/exp1
-    $ quit
+
+    $ sftp <crsid>@rdv.uis.cam.ac.uk
+    Password:
+    Connected to rdv.uis.cam.ac.uk.
+    sftp> cd <project_dir>
+    sftp> mkdir data
+    sftp> mkdir data/exp1
+    sftp> quit
 
 
 .. note:: If `remote_dest_dir` is a path with only one level or when only the lowest level does not yet exist, then this step can be skipped.
 
-Archive data to RCS
+Archive data
 ----------------------
 
-To archive data to RCS:
+To archive data:
 
 .. code-block:: console
-   
+
     $ cd path/to/data.csv
     $ camrcs up
 
-``camrcs`` will then proceed to archive all directories specified in *data.csv*.
+``camrcs`` will then proceed to archive all directories specified in *data.csv* that have not been uploaded yet.
 
-The workflow consists of the following steps:
+The workflow consists of the following steps for each directory:
 
     1. Creation of compressed tar file of target directory
     2. Generation of md5sum of tar file
-        * This can be used to check data integrity when retrieving the archive from RCS
+        * This can be used to check data integrity when retrieving the archive
     3. Splitting of tar file into multiple parts
         * The split file size can be set in *data.csv* under the *chunk_size* header
-    4. Uploading of split tar file to RCS
+    4. Pressing Enter to start the upload, followed by logging in
+        * The upload starts on request, as ``rsync`` can time out if the login is not completed promptly
+    5. Uploading of split tar file
+    6. Removal of the local split tar files in `temp_path`, unless ``--keep`` is used
 
 
-Retrieve data from RCS
+Retrieve data
 -------------------------
 
-To retrieve data from RCS:
+To retrieve data:
 
 .. code-block:: console
-   
+
     $ cd path/to/data.csv
     $ camrcs down -t 1
 
-The value of the ``-t`` flag should correspond to the ``id`` header in *data.csv*.
+The value of the ``-t`` flag should correspond to the ``id`` header in *data.csv*. `download_dir` must be set for this entry.
 
 .. note::
-   Before version 0.10.0, an archive consisting of a single part could be stored on RCS as a file named `remote_dest_dir`, if that directory did not yet exist. ``camrcs down`` detects this for entries in *data.csv* uploaded with these versions, which requires one extra login to RCS.
+   Before version 0.10.0, an archive consisting of a single part could be stored as a file named `remote_dest_dir`, if that directory did not yet exist. ``camrcs down`` detects this for entries in *data.csv* uploaded with these versions, which requires one extra login.
 
 The workflow consists of the following steps:
 
-    1. Retrieval of split archive files from RCS
-    2. Concatenation of split archive files into one archive file
+    1. Retrieval of split archive files
+    2. Concatenation of split archive files into one archive file, removing each split file along the way
     3. Generation of md5sum of assembled tar file
     4. Comparison of md5sums (uploaded data vs retrieved data)
     5. Extraction of compressed archive file to destination directory
-    6. Removal of split archive files
-
-
-
-
+    6. Removal of compressed archive file, unless ``--keep`` is used
