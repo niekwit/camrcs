@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import subprocess
 from types import SimpleNamespace
 
@@ -7,6 +8,7 @@ import pandas as pd
 import pytest
 
 import camrcs
+from camrcs import checksums, data_csv, manifest, remote, single_part_bug, upload
 
 HEADER = "id,crsid,project_dir,date_up,date_down,temp_path,target_dir,remote_dest_dir,chunk_size,exclude_dir,md5sum_up,md5sum_down,archive_size,download_dir,version"
 
@@ -19,12 +21,12 @@ HEADER = "id,crsid,project_dir,date_up,date_down,temp_path,target_dir,remote_des
     ],
 )
 def test_remote_host(project_dir, host):
-    assert camrcs.remote_host(project_dir) == host
+    assert remote.remote_host(project_dir) == host
 
 
 def test_remote_host_unknown_project_dir():
     with pytest.raises(SystemExit):
-        camrcs.remote_host("/data/project/abc")
+        remote.remote_host("/data/project/abc")
 
 
 @pytest.mark.parametrize(
@@ -40,7 +42,7 @@ def test_remote_host_unknown_project_dir():
     ],
 )
 def test_has_single_part_bug(version, expected):
-    assert camrcs.has_single_part_bug(version) == expected
+    assert single_part_bug.has_single_part_bug(version) == expected
 
 
 @pytest.mark.parametrize(
@@ -57,7 +59,7 @@ def test_remote_path_is_file(monkeypatch, listing, expected):
         "run",
         lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=listing),
     )
-    assert camrcs.remote_path_is_file("nw416@host:/path") == expected
+    assert remote.remote_path_is_file("nw416@host:/path") == expected
 
 
 def write_upload_csv(path, names):
@@ -82,16 +84,16 @@ def write_upload_csv(path, names):
 def upload_dir(tmp_path, monkeypatch):
     """Runs camrcs in a temporary directory, without any transfers"""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(camrcs, "cdir", str(tmp_path))
+    monkeypatch.setattr(data_csv, "cdir", str(tmp_path))
     monkeypatch.setattr("builtins.input", lambda *args: "")
-    run = camrcs.run
+    run = upload.run
     commands = []
 
     def run_without_transfer(command, message=None):
         commands.append(command)
         return True if command.startswith("rsync") else run(command, message)
 
-    monkeypatch.setattr(camrcs, "run", run_without_transfer)
+    monkeypatch.setattr(upload, "run", run_without_transfer)
 
     return SimpleNamespace(path=tmp_path, commands=commands)
 
@@ -99,7 +101,7 @@ def upload_dir(tmp_path, monkeypatch):
 def test_up_records_upload_in_empty_columns(upload_dir):
     # pandas>=3 does not allow strings to be written to columns read as floats
     write_upload_csv(upload_dir.path, ["exp1"])
-    camrcs.up(False, False)
+    upload.up(False, False)
 
     row = pd.read_csv("data.csv").iloc[0]
     assert row["md5sum_up"] == "abc"
@@ -109,7 +111,7 @@ def test_up_records_upload_in_empty_columns(upload_dir):
 
 def test_up_uses_trailing_slash(upload_dir):
     write_upload_csv(upload_dir.path, ["exp1"])
-    camrcs.up(False, False)
+    upload.up(False, False)
 
     rsync = next(c for c in upload_dir.commands if c.startswith("rsync"))
     assert rsync.endswith("nw416@rdv.uis.cam.ac.uk:/rdv/project/abc/ngsdata/exp1/")
@@ -117,16 +119,16 @@ def test_up_uses_trailing_slash(upload_dir):
 
 def test_up_removes_archives_of_all_entries(upload_dir):
     temp_path = write_upload_csv(upload_dir.path, ["exp1", "exp2"])
-    camrcs.up(False, False)
+    upload.up(False, False)
 
     assert list(temp_path.iterdir()) == []
 
 
 def test_up_keep(upload_dir):
     temp_path = write_upload_csv(upload_dir.path, ["exp1", "exp2"])
-    camrcs.up(False, True)
+    upload.up(False, True)
 
-    assert len(list(temp_path.iterdir())) == 8  # including manifests
+    assert len(list(temp_path.iterdir())) == 10  # including manifests and md5sums
 
 
 def rows(path):
@@ -135,7 +137,7 @@ def rows(path):
 
 def test_update_csv_keeps_changes_made_during_run(upload_dir, monkeypatch):
     write_upload_csv(upload_dir.path, ["exp1"])
-    run_without_transfer = camrcs.run
+    run_without_transfer = upload.run
 
     def edit_during_transfer(command, message=None):
         if command.startswith("rsync"):
@@ -143,8 +145,8 @@ def test_update_csv_keeps_changes_made_during_run(upload_dir, monkeypatch):
                 f.write("2,nw416,/rdv/project/abc,,,/tmp/,/added,added,1G,,,,,,\n")
         return run_without_transfer(command, message)
 
-    monkeypatch.setattr(camrcs, "run", edit_during_transfer)
-    camrcs.up(False, False)
+    monkeypatch.setattr(upload, "run", edit_during_transfer)
+    upload.up(False, False)
 
     csv = rows(upload_dir.path)
     assert csv.loc[2, "target_dir"] == "/added"
@@ -154,7 +156,7 @@ def test_update_csv_keeps_changes_made_during_run(upload_dir, monkeypatch):
 def test_update_csv_keeps_backup_and_no_temporary_file(upload_dir):
     write_upload_csv(upload_dir.path, ["exp1"])
     before = (upload_dir.path / "data.csv").read_text()
-    assert camrcs.update_csv(1, camrcs.read_csv().loc[1], md5sum_up="def")
+    assert data_csv.update_csv(1, data_csv.read_csv().loc[1], md5sum_up="def")
 
     assert (upload_dir.path / "data.csv.bak").read_text() == before
     assert not (upload_dir.path / "data.csv.tmp").exists()
@@ -168,9 +170,9 @@ def test_update_csv_leaves_data_csv_intact_on_failure(upload_dir, monkeypatch):
     def fail(*args):
         raise OSError
 
-    monkeypatch.setattr(camrcs.os, "replace", fail)
+    monkeypatch.setattr(os, "replace", fail)
     with pytest.raises(OSError):
-        camrcs.update_csv(1, camrcs.read_csv().loc[1], md5sum_up="def")
+        data_csv.update_csv(1, data_csv.read_csv().loc[1], md5sum_up="def")
 
     assert (upload_dir.path / "data.csv").read_text() == before
 
@@ -180,7 +182,7 @@ def test_update_csv_adds_missing_column(upload_dir):
     (upload_dir.path / "data.csv").write_text(
         "id,project_dir,target_dir,remote_dest_dir\n1,/rdv/p,/d/exp,x\n"
     )
-    camrcs.update_csv(1, camrcs.read_csv().loc[1], version="0.10.0")
+    data_csv.update_csv(1, data_csv.read_csv().loc[1], version="0.10.0")
 
     assert rows(upload_dir.path).loc[1, "version"] == "0.10.0"
 
@@ -188,7 +190,7 @@ def test_update_csv_adds_missing_column(upload_dir):
 def test_up_uploads_manifest_to_rdv(upload_dir):
     temp_path = write_upload_csv(upload_dir.path, ["exp1"])
     (temp_path / "exp1.tar.gz.part-aa").write_text("data")
-    camrcs.up(False, True)
+    upload.up(False, True)
 
     manifest_file = temp_path / "exp1.tar.gz.manifest.json"
     manifest = json.loads(manifest_file.read_text())
@@ -208,7 +210,7 @@ def test_up_does_not_write_manifest_for_rcs(upload_dir):
     temp_path = write_upload_csv(upload_dir.path, ["exp1"])
     csv_file = upload_dir.path / "data.csv"
     csv_file.write_text(csv_file.read_text().replace("/rdv/", "/rcs/"))
-    camrcs.up(False, True)
+    upload.up(False, True)
 
     assert not (temp_path / "exp1.tar.gz.manifest.json").exists()
 
@@ -228,7 +230,7 @@ def test_manifest_contains_uploaded_rcs_entries(upload_dir):
         )
         + "\n"
     )
-    camrcs.manifest()
+    manifest.rcs_manifest()
 
     entries = json.loads((upload_dir.path / "rcs_manifest.json").read_text())
     assert [e["id"] for e in entries] == [1, 2, 3, 4]
@@ -249,32 +251,32 @@ def test_manifest_contains_uploaded_rcs_entries(upload_dir):
     ],
 )
 def test_fits_in_one_part(archive_size, chunk_size, expected):
-    assert camrcs.fits_in_one_part(archive_size, chunk_size) == expected
+    assert single_part_bug.fits_in_one_part(archive_size, chunk_size) == expected
 
 
 def test_update_csv_does_not_recreate_deleted_entry(upload_dir):
     write_upload_csv(upload_dir.path, ["exp1"])
-    row = camrcs.read_csv().loc[1]
+    row = data_csv.read_csv().loc[1]
     (upload_dir.path / "data.csv").write_text(HEADER + "\n")
 
-    assert not camrcs.update_csv(1, row, md5sum_up="def")
+    assert not data_csv.update_csv(1, row, md5sum_up="def")
     assert (upload_dir.path / "data.csv").read_text() == HEADER + "\n"
 
 
 @pytest.mark.parametrize("column", ["project_dir", "target_dir", "remote_dest_dir"])
 def test_update_csv_does_not_update_changed_entry(upload_dir, column):
     write_upload_csv(upload_dir.path, ["exp1"])
-    row = camrcs.read_csv().loc[1].copy()
+    row = data_csv.read_csv().loc[1].copy()
     before = (upload_dir.path / "data.csv").read_text()
     row[column] = "/value/before/transfer"
 
-    assert not camrcs.update_csv(1, row, md5sum_up="def")
+    assert not data_csv.update_csv(1, row, md5sum_up="def")
     assert (upload_dir.path / "data.csv").read_text() == before
 
 
 def test_up_keeps_archive_if_entry_changed_during_upload(upload_dir, monkeypatch):
     temp_path = write_upload_csv(upload_dir.path, ["exp1", "exp2"])
-    run_without_transfer = camrcs.run
+    run_without_transfer = upload.run
 
     def edit_during_transfer(command, message=None):
         if command.startswith("rsync") and "exp1" in command:
@@ -284,8 +286,8 @@ def test_up_keeps_archive_if_entry_changed_during_upload(upload_dir, monkeypatch
             )
         return run_without_transfer(command, message)
 
-    monkeypatch.setattr(camrcs, "run", edit_during_transfer)
-    camrcs.up(False, False)
+    monkeypatch.setattr(upload, "run", edit_during_transfer)
+    upload.up(False, False)
 
     # the changed entry is not recorded or removed, the next entry continues as usual
     csv = rows(upload_dir.path)
@@ -294,3 +296,105 @@ def test_up_keeps_archive_if_entry_changed_during_upload(upload_dir, monkeypatch
     assert isinstance(csv.loc[2, "date_up"], str)
     assert (temp_path / "exp1.tar.gz.part-aa").exists()
     assert not (temp_path / "exp2.tar.gz.part-aa").exists()
+
+
+def test_up_asks_for_enter_directly_before_rsync(upload_dir, monkeypatch):
+    # rsync can time out if the login does not directly follow pressing Enter
+    write_upload_csv(upload_dir.path, ["exp1"])
+    steps = []
+    md5 = checksums.md5
+    run_without_transfer = upload.run
+
+    def record_md5(file):
+        steps.append("md5")
+        return md5(file)
+
+    def record_rsync(command, message=None):
+        if command.startswith("rsync"):
+            steps.append("rsync")
+        return run_without_transfer(command, message)
+
+    monkeypatch.setattr(checksums, "md5", record_md5)
+    monkeypatch.setattr(upload, "run", record_rsync)
+    monkeypatch.setattr("builtins.input", lambda *args: steps.append("enter"))
+    upload.up(False, False)
+
+    assert steps == ["md5", "enter", "rsync"]
+
+
+def split_archive(path, parts):
+    archive = path / "exp1.tar.gz"
+    for suffix, content in parts.items():
+        (path / f"exp1.tar.gz.part-{suffix}").write_text(content)
+
+    return str(archive)
+
+
+def count_md5(monkeypatch):
+    calculated = []
+    md5 = checksums.md5
+
+    def record_md5(file):
+        calculated.append(file.split("-")[-1])
+        return md5(file)
+
+    monkeypatch.setattr(checksums, "md5", record_md5)
+
+    return calculated
+
+
+def test_part_md5sums_are_reused_after_cancelling(tmp_path, monkeypatch):
+    archive = split_archive(tmp_path, {"aa": "first", "ab": "second", "ac": "third"})
+    md5 = checksums.md5
+
+    def cancel_on_second_part(file):
+        if file.endswith("part-ab"):
+            raise KeyboardInterrupt
+        return md5(file)
+
+    monkeypatch.setattr(checksums, "md5", cancel_on_second_part)
+    with pytest.raises(KeyboardInterrupt):
+        checksums.part_md5sums(archive)
+
+    monkeypatch.setattr(checksums, "md5", md5)
+    calculated = count_md5(monkeypatch)
+    parts = checksums.part_md5sums(archive)
+
+    assert calculated == ["ab", "ac"]
+    assert parts == {
+        "part-aa": {"size": 5, "md5": hashlib.md5(b"first").hexdigest()},
+        "part-ab": {"size": 6, "md5": hashlib.md5(b"second").hexdigest()},
+        "part-ac": {"size": 5, "md5": hashlib.md5(b"third").hexdigest()},
+    }
+
+
+def test_part_md5sums_not_calculated_again_when_complete(tmp_path, monkeypatch):
+    archive = split_archive(tmp_path, {"aa": "first", "ab": "second"})
+    first = checksums.part_md5sums(archive)
+    calculated = count_md5(monkeypatch)
+
+    assert checksums.part_md5sums(archive) == first
+    assert calculated == []
+
+
+def test_part_md5sums_ignores_saved_md5sum_of_recreated_part(tmp_path, monkeypatch):
+    archive = split_archive(tmp_path, {"aa": "first"})
+    checksums.part_md5sums(archive)
+
+    # same size, so only the time of last modification shows the part is new
+    part = tmp_path / "exp1.tar.gz.part-aa"
+    part.write_text("other")
+    info = part.stat()
+    os.utime(part, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
+
+    parts = checksums.part_md5sums(archive)
+    assert parts["part-aa"]["md5"] == hashlib.md5(b"other").hexdigest()
+
+
+def test_up_does_not_upload_saved_md5sums_and_removes_them(upload_dir):
+    temp_path = write_upload_csv(upload_dir.path, ["exp1"])
+    upload.up(False, False)
+
+    rsync = next(c for c in upload_dir.commands if c.startswith("rsync"))
+    assert "part_md5sums" not in rsync
+    assert list(temp_path.iterdir()) == []

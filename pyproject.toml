@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "camrcs"
-version = "0.11.0"
+version = "0.11.1"
 description = "A package for management of Cambridge Research Cold Storage backups"
 readme = "README.md"
 license = { text = "MIT" }
@@ -25,7 +25,7 @@ Documentation = "https://camrcs.readthedocs.io"
 Source = "https://github.com/niekwit/camrcs"
 
 [project.scripts]
-camrcs = "camrcs:main"
+camrcs = "camrcs.cli:main"
 
 [tool.setuptools]
-py-modules = ["camrcs"]
+packages = ["camrcs"]
